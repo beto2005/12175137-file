@@ -1,0 +1,89 @@
+# Import flask dependencies
+from flask import Flask, request, jsonify
+import openai
+import logging
+
+# Initialize the Flask app
+app = Flask(__name__)
+
+# Set your OpenAI organization ID and API key from environment variables
+openai.organization = "org-NLJg0QvTnEGzF92XoXO3a53f"  # Replace with your organization ID
+openai.api_key = "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" # Replace with your API key stored in environment variables
+
+# Dictionary of responses for different business topics
+business_responses = {
+    "writing_business_plan": "To write a business plan, you should include sections such as an executive summary, market analysis, financial projections, and more. Do you need help with a specific section?",
+    "registering_business": "To register a business, you'll need to choose a business structure, obtain necessary licenses, and complete registration with local authorities. Can you specify your location?",
+    "obtaining_funding": "Funding options include loans, investors, grants, or bootstrapping. It depends on your business type and goals. Do you want more information on a particular funding source?",
+    "marketing_and_advertising": "Marketing involves strategies like social media, SEO, content marketing, and paid advertising. What marketing channels are you interested in?",
+    "managing_finances": "Financial management is crucial. Consider creating a budget, managing cash flow, and using accounting software. What specific financial aspect do you need guidance on?"
+}
+
+# Function for handling user queries using ChatGPT (gpt-3.5-turbo)
+def process_user_query(user_query):
+    try:
+        # Send the user query to ChatGPT for a response using gpt-3.5-turbo
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": user_query},
+            ],
+            temperature=0.2,
+            max_tokens=500
+        )
+
+        if response.choices:
+            return response.choices[0].message["content"]
+        else:
+            return "Empty response from ChatGPT."
+
+    except Exception as e:
+        return f"Error from ChatGPT: {str(e)}"
+
+# Default route
+@app.route('/')
+def index():
+    return 'Hello World'
+
+# Create a route for the webhook
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    try:
+        print("working")
+        # Get user query from the JSON request
+        req = request.get_json(silent=True, force=True)
+        user_query = req.get('queryResult', {}).get('queryText', '')
+
+        topics = {
+            "writing": "writing_business_plan",
+            "registering": "registering_business",
+            "funding": "obtaining_funding",
+            "marketing": "marketing_and_advertising",
+            "managing": "managing_finances"
+        }
+
+        response_key = next((topics[key] for key in topics if key in user_query.lower()), None)
+
+        if response_key:
+            response_text = process_user_query(business_responses[response_key])
+        else:
+            response_text = process_user_query(
+                "I'm here to help you start a business. Please specify one of the topics: Writing a business plan, Registering a business, Obtaining funding, Marketing and advertising, Managing finances.")
+            # Log the user's request for later analysis
+            logging.info(f"User made a general request: {user_query}")
+
+        # Prepare a response for DialogFlow
+        return {
+            "fulfillmentMessages": [{"text": {"text": [response_text]}}]
+        }
+
+    except Exception as e:
+        logging.error(f"Error occurred: {str(e)}")
+        return {
+            "fulfillmentMessages": [{"text": {"text": ["Error occurred while processing the request."]}}]
+        }
+
+# Run the app
+if __name__ == '__main__':
+    app.run(port=5000)
